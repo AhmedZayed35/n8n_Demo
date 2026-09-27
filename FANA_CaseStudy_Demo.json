@@ -1,0 +1,1573 @@
+{
+  "name": "FANA_CaseStudy_Demo",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "1Pk4Bfi_Upj5tIxy_MVvktFKL-t7DlUd8T8MTkX_HkpQ",
+          "mode": "list",
+          "cachedResultName": "FANA Demo: Contact Information (Responses)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Pk4Bfi_Upj5tIxy_MVvktFKL-t7DlUd8T8MTkX_HkpQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 48606720,
+          "mode": "list",
+          "cachedResultName": "Form responses 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Pk4Bfi_Upj5tIxy_MVvktFKL-t7DlUd8T8MTkX_HkpQ/edit#gid=48606720"
+        },
+        "options": {
+          "columnsToWatch": [
+            "Name",
+            "Email",
+            "Phone number"
+          ]
+        }
+      },
+      "id": "d6d066db-6451-4731-90a1-4df0cae131dd",
+      "name": "Google Sheets Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        -32
+      ],
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "hvsSCYIVMBwEkXDn",
+          "name": "Google Sheets Trigger account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- Helper: Normalize & Validate Saudi/Gulf Phone Numbers to E.164 ---\nfunction validateAndNormalizePhone(phoneRaw) {\n    if (!phoneRaw) {\n        return { isValid: false, normalized: null };\n    }\n    \n    // Clean non-digit characters except leading '+'\n    let clean = String(phoneRaw).replace(/[^\\d+]/g, '');\n\n    // Convert Saudi local '05XXXXXXXX' to '+9665XXXXXXXX'\n    if (/^05\\d{8}$/.test(clean)) {\n        clean = '+966' + clean.slice(1);\n    }\n    // Convert '9665XXXXXXXX' to '+9665XXXXXXXX'\n    else if (/^9665\\d{8}$/.test(clean)) {\n        clean = '+' + clean;\n    }\n    // Convert '009665XXXXXXXX' to '+9665XXXXXXXX'\n    else if (/^009665\\d{8}$/.test(clean)) {\n        clean = '+' + clean.slice(2);\n    }\n\n    // Validate E.164 format (+9665XXXXXXXX or general international +1-15 digits)\n    const e164Regex = /^\\+[1-9]\\d{1,14}$/;\n    const isValid = e164Regex.test(clean);\n\n    return {\n        isValid: isValid,\n        normalized: isValid ? clean : null\n    };\n}\n\n// --- Helper: Validate Email Format ---\nfunction validateEmail(emailRaw) {\n    if (!emailRaw) {\n        return { isValid: false, normalized: null };\n    }\n    \n    const clean = String(emailRaw).trim().toLowerCase();\n    const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n    const isValid = emailRegex.test(clean);\n\n    return {\n        isValid: isValid,\n        normalized: isValid ? clean : null\n    };\n}\n\n// --- Helper: Validate & Clean Name ---\nfunction validateName(nameRaw) {\n    if (!nameRaw) {\n        return { isValid: false, normalized: null };\n    }\n    \n    const clean = String(nameRaw).trim();\n    const isValid = clean.length >= 2;\n\n    return {\n        isValid: isValid,\n        normalized: isValid ? clean : null\n    };\n}\n\n// --- Main n8n Node Execution (Looping over all incoming items) ---\nconst currentTimeIso = new Date().toISOString(); \nconst currentTimestampSec = Math.floor(Date.now() / 1000); \n\n// Map over every incoming item in the array cleanly\nreturn $input.all().map(item => {\n    const inputPayload = item.json;\n\n    // Extract potential source fields\n    const mobileRaw = inputPayload['Phone number'];\n    const emailRaw = inputPayload['Email'];\n    const nameRaw = inputPayload['Name'];\n\n    // 1. Run Validations\n    const phoneRes = validateAndNormalizePhone(mobileRaw);\n    const emailRes = validateEmail(emailRaw);\n    const nameRes = validateName(nameRaw);\n\n    // 2. Collect Validation Errors\n    const validationErrors = [];\n    if (mobileRaw && !phoneRes.isValid) {\n        validationErrors.push(\"Invalid mobile phone format\");\n    }\n    if (emailRaw && !emailRes.isValid) {\n        validationErrors.push(\"Invalid email format\");\n    }\n    if (nameRaw && !nameRes.isValid) {\n        validationErrors.push(\"Invalid name string\");\n    }\n\n    // 3. Return the restructured object formatted for n8n's expected JSON output\n    return {\n        json: {\n            // Validation Metadata\n            \"is_valid_lead\": phoneRes.isValid || emailRes.isValid,\n            \"validation_errors\": validationErrors,\n\n            // Group 1: Identity and Source\n            \"lead_id\": inputPayload[\"lead_id\"] || `LEAD-${currentTimestampSec}`,\n            \"source\": inputPayload[\"source\"] || \"Google Forms\",\n            \"campaign\": inputPayload[\"campaign\"] || \"Al_Tilal_Q3_Awareness\",\n            \"name\": nameRes.normalized,\n            \"mobile\": phoneRes.normalized,\n            \"email\": emailRes.normalized,\n            \"city\": inputPayload[\"city\"] || \"Riyadh\",\n\n            // Group 2: Buying Needs\n            \"interested_asset\": inputPayload[\"interested_asset\"] || null,\n            \"property_type\": inputPayload[\"property_type\"] || null,\n            \"budget_range\": inputPayload[\"budget_range\"] || null,\n            \"investment_purpose\": inputPayload[\"investment_purpose\"] || null,\n            \"individual_or_company\": inputPayload[\"individual_or_company\"] || null,\n            \"auction_experience\": inputPayload[\"auction_experience\"] || null,\n\n            // Group 3: Readiness and Contact\n            \"purchase_readiness\": inputPayload[\"purchase_readiness\"] || null,\n            \"cash_or_financing_readiness\": inputPayload[\"cash_or_financing_readiness\"] || null,\n            \"timeline\": inputPayload[\"timeline\"] || null,\n            \"preferred_contact_method\": inputPayload[\"preferred_contact_method\"] || \"WhatsApp\",\n            \"consent_or_contact_status\": inputPayload[\"consent_or_contact_status\"] || \"Pending\",\n\n            // Group 4: Workflow Record\n            \"created_date\": inputPayload[\"created_date\"] || currentTimeIso,\n            \"last_interaction\": currentTimeIso,\n            \"qualification_status\": \"Pending_Qualification\",\n            \"score\": null,\n            \"reason\": null,\n\n            // Audit Trail\n            \"raw_payload\": inputPayload\n        }\n    };\n});"
+      },
+      "id": "90b8df38-2621-4ab2-b916-d567bfabf557",
+      "name": "Data Validation and Extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "69b9b551-b064-4615-8772-f2655e97bd30",
+              "leftValue": "={{ $json.validation_errors }}",
+              "rightValue": "",
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "9b584276-06b8-4ac9-ae54-3637a72d5451",
+              "leftValue": "",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b9fe8bd2-13f4-405f-a15f-e1dd32c1561b",
+      "name": "If validation errors exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -48,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "Invalid Data"
+      },
+      "id": "220d8364-ef25-49b8-940a-3dea8e75e70e",
+      "name": "Stop and Error",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        144,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "search",
+        "filterGroupsUi": {
+          "filterGroupsValues": [
+            {
+              "filtersUi": {
+                "filterValues": [
+                  {
+                    "propertyName": "phone|string",
+                    "value": "={{ $json.mobile }}"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {}
+      },
+      "id": "e9779622-763a-4674-b336-b331c8f90cd2",
+      "name": "Search for existing user",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        144,
+        -16
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "dsPstzxJMsnOXdqu",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst originalData = $node[\"Data Validation and Extraction\"].json;\nconst searchResult = $input.item.json;\n\nconst contactExists = searchResult && searchResult.id ? true : false;\n\nreturn {\n    // 1. Preserve ALL original validation data (including created_date)\n  ...originalData,\n  \n  // 2. Attach CRM Lookup Metadata\n  crm_lookup: {\n    is_existing_contact: contactExists,\n    hubspot_contact_id: contactExists ? searchResult.id : null,\n    // If contact exists, preserve original CRM creation date; otherwise keep payload created_date\n    created_date: contactExists \n      ? searchResult.properties.createdate || originalData.created_date \n      : originalData.created_date\n  }\n};"
+      },
+      "id": "d3fac6ac-51c5-49f7-b37b-4138b4d4d3d1",
+      "name": "Merge Fetched Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are FANA's AI Real Estate Consultant for the \"Al Tilal Al Sharqiya\" real estate auction (مزاد تلال الشرقية).\nYour objective is to conduct a polite, professional dialogue in Saudi dialect  to evaluate buyer intent, qualify leads, and extract missing attributes into structured JSON.\n\n---\n### INCOMING CONTEXT & STATE\nYou are provided with the lead's current master state object.\nAddress the lead by their first name if available in the `name` field\n\nCURRENT_MASTER_STATE: {{ JSON.stringify($json) }}\n\n---\n### CORE OPERATIONAL RULES\n1. INTENT RECOGNITION (TURN 1):\n   Before forcing data collection, determine the lead's intent from their message:\n   - ACTIVE BUYER: Wants to participate in the auction -> Proceed with collecting missing slots.\n   - BROWSER / INFO SEEKER (\"بس بشوف الأسعار\", \"فضول\"): Set timeline = \"Browsing\", purchase_readiness = \"Informational\". Respond warmly with general info without pushing aggressively for budget numbers.\n\n2. TARGET NULL SLOTS ONLY: For active buyers, focus questions ONLY on required fields currently evaluating to `null`:\n   - property_type (Residential, Commercial, Industrial, Mixed_Use)\n   - budget_range (min_sar, max_sar, raw_text)\n   - cash_or_financing_readiness (Cash_Ready, Financing_Needed, Unresolved)\n   - timeline (Immediate_Auction, 1_Month, 3_Months, Browsing)\n   DO NOT re-ask for identity details (name, phone, email) or already populated fields.\n\n3. CONCISE DIALOGUE: Limit your Saudi Arabic response (`reply_message`) to 1-2 concise, polite questions per turn. Never overwhelm the client.\n\n4. ARABIC MONETARY EXTRACTION: Parse informal Saudi phrasing into numerical SAR ranges under `budget_range`:\n   - \"حدود مليون ونصف\" -> min_sar: 1000000, max_sar: 1500000, raw_text: \"حدود مليون ونصف\"\n   - \"حول المليونين\" -> min_sar: 1800000, max_sar: 2000000, raw_text: \"حول المليونين\"\n   - \"2.5 مليون\" -> min_sar: 2500000, max_sar: 2500000, raw_text: \"2.5 مليون\"\n\n5. HUMAN ESCALATION TRIGGERS:\n   - If the user explicitly asks for a human rep (\"أبغا أكلم موظف\", \"حولني للمبيعات\", \"اتصلوا علي\"):\n     Set `escalate_to_human` = true and `escalation_reason` = \"Explicit human representative request\".\n   - If the user gives completely ambiguous or off-topic responses after follow-up:\n     Set `escalate_to_human` = true and `escalation_reason` = \"Ambiguous customer intent\".\n    - dont ask further questions just tell him a rep will be in contact immediately \n\n6. STATE OVERRIDE: If the user changes an answer given earlier (e.g., updating budget from 1.5M to 2M), extract the new value so downstream state nodes can overwrite it.\n\n---\n\n### KNOWLEDGE RETRIEVAL & FACTUAL GROUNDING (RAG)\n- You have access to a tool (\"Simple Vector Store1\") containing official brochure specifications for Al Tilal Al Sharqiya properties in Al-Khobar (مزاد تلال الشرقية).\n- The brochure contains specific details including: plot numbers (e.g., قطعة 45/أ), land areas (المساحة m²), deed numbers (رقم الصك), plan numbers (المخطط 2/285), bidding deposit amounts (شحن المحفظة), structural layout (عدد الغرف والأسوار), and nearby landmarks.\n- When the user asks factual questions about specific assets, areas, terms, or deposit requirements, ALWAYS use \"Simple Vector Store1\" to retrieve ground-truth facts before answering.\n- Combine factual answers from the tool with your qualifying questions in a single polite Saudi Arabic reply. Never invent land areas, prices, or legal terms.\n\n---\n### REQUIRED OUTPUT FORMAT\nAlways return a single valid JSON object containing EXACTLY two top-level keys:\n\n{\n  \"reply_message\": \"Saudi Arabic string to send to the lead\",\n  \"extracted_slots\": {\n    \"property_type\": \"Commercial | Residential | Industrial | Mixed_Use | null\",\n    \"interested_asset\": \"string | null\",\n    \"budget_range\": {\n      \"min_sar\": number | null,\n      \"max_sar\": number | null,\n      \"raw_text\": \"string | null\"\n    } | null,\n    \"cash_or_financing_readiness\": \"Cash_Ready | Financing_Needed | Unresolved | null\",\n    \"timeline\": \"Immediate_Auction | 1_Month | 3_Months | Browsing | null\",\n    \"purchase_readiness\": \"High | Medium | Low | Informational | null\",\n    \"investment_purpose\": \"End_User | Investment | Browsing_Market | null\",\n    \"escalate_to_human\": boolean,\n    \"escalation_reason\": \"string | null\"\n  }\n}\n\n---\n### FEW-SHOT EXAMPLES\n\n[EXAMPLE 1: Initial Greeting & Missing Slot Identification]\nInput State: { \"name\": \"أحمد العتيبي\", \"property_type\": null, \"budget_range\": null, \"cash_or_financing_readiness\": null }\nUser Message: \"أهلاً، استفسر عن أرض بالمزاد\"\nOutput JSON:\n{\n  \"reply_message\": \"أهلاً بك أخي أحمد! شرفتنا بالتواصل مع مزاد تلال الشرقية. وش نوع العقار اللي تدور عليه (سكني أم تجاري)، وكم الميزانية المرصودة تقريباً؟\",\n  \"extracted_slots\": {\n    \"property_type\": null,\n    \"interested_asset\": null,\n    \"budget_range\": null,\n    \"cash_or_financing_readiness\": null,\n    \"timeline\": null,\n    \"purchase_readiness\": null,\n    \"investment_purpose\": null,\n    \"escalate_to_human\": false,\n    \"escalation_reason\": null\n  }\n}\n\n[EXAMPLE 2: Arabic Natural Language Extraction]\nInput State: { \"name\": \"أحمد العتيبي\", \"property_type\": null, \"budget_range\": null }\nUser Message: \"أبغا أرض تجارية والميزانية حدود مليون ونصف ومحتاج تمويل بنكي\"\nOutput JSON:\n{\n  \"reply_message\": \"ممتاز أخي أحمد، تم تسجيل طلبك لأرض تجارية بميزانية 1.5 مليون ريال مع تمويل بنكي. متى تخطط بالشراء هل تفضل المزاد القادم؟\",\n  \"extracted_slots\": {\n    \"property_type\": \"Commercial\",\n    \"interested_asset\": \"Commercial Land\",\n    \"budget_range\": {\n      \"min_sar\": 1000000,\n      \"max_sar\": 1500000,\n      \"raw_text\": \"حدود مليون ونصف\"\n    },\n    \"cash_or_financing_readiness\": \"Financing_Needed\",\n    \"timeline\": null,\n    \"purchase_readiness\": \"Medium\",\n    \"investment_purpose\": null,\n    \"escalate_to_human\": false,\n    \"escalation_reason\": null\n  }\n}\n\n[EXAMPLE 3: Casual Market Browser Intent]\nInput State: { \"name\": \"فهد\", \"property_type\": null, \"budget_range\": null }\nUser Message: \"ما أبغى أشتر أسبوع هذا، بس أطلع على أسعار المزاد\"\nOutput JSON:\n{\n  \"reply_message\": \"أهلاً بك أخي فهد! يسعدنا إطلاعك على سوق العقار. تقدر تتصفح كراسة الشروط والموقع لمزاد تلال الشرقية، ونسعد بخدمتك بأي وقت.\",\n  \"extracted_slots\": {\n    \"property_type\": null,\n    \"interested_asset\": null,\n    \"budget_range\": null,\n    \"cash_or_financing_readiness\": null,\n    \"timeline\": \"Browsing\",\n    \"purchase_readiness\": \"Informational\",\n    \"investment_purpose\": \"Browsing_Market\",\n    \"escalate_to_human\": false,\n    \"escalation_reason\": null\n  }\n}\n\n[EXAMPLE 4: Explicit Human Escalation Trigger]\nInput State: { \"name\": \"خالد الدوسري\" }\nUser Message: \"ما أبغى أرد على أسئلة آلي، حولني على شخص أكلمه بالهاتف\"\nOutput JSON:\n{\n  \"reply_message\": \"أبشر أخي خالد. تم إيقاف المساعد الآلي وسيتم تحويل طلبك حالاً لأحد ممثلي المبيعات للتواصل معك مباشرة.\",\n  \"extracted_slots\": {\n    \"property_type\": null,\n    \"interested_asset\": null,\n    \"budget_range\": null,\n    \"cash_or_financing_readiness\": null,\n    \"timeline\": null,\n    \"purchase_readiness\": null,\n    \"investment_purpose\": null,\n    \"escalate_to_human\": true,\n    \"escalation_reason\": \"Explicit human representative request\"\n  }\n}\n\n[EXAMPLE 5: State Override / User Changes Mind]\nInput State: { \"name\": \"سارة\", \"budget_range\": { \"min_sar\": 1000000, \"max_sar\": 1000000, \"raw_text\": \"مليون\" } }\nUser Message: \"عدلت رأيي، خلي الميزانية مليونين كاش جاهزة\"\nOutput JSON:\n{\n  \"reply_message\": \"تم تحديث الميزانية إلى 2,000,000 ريال (سيولة كاش جاهزة). هل الشراء مخصص لاستخدام شخصي أم استثماري؟\",\n  \"extracted_slots\": {\n    \"property_type\": null,\n    \"interested_asset\": null,\n    \"budget_range\": {\n      \"min_sar\": 2000000,\n      \"max_sar\": 2000000,\n      \"raw_text\": \"مليونين كاش\"\n    },\n    \"cash_or_financing_readiness\": \"Cash_Ready\",\n    \"timeline\": null,\n    \"purchase_readiness\": \"High\",\n    \"investment_purpose\": null,\n    \"escalate_to_human\": false,\n    \"escalation_reason\": null\n  }\n}"
+        }
+      },
+      "id": "a8d5b897-a8fd-456f-94b2-02678e8b365e",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2192,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "gpt-5"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "0fb614ce-728f-46e3-94f3-d2107a23a983",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2192,
+        -48
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $(\"Build Master State\").item.json.session_key }}",
+        "contextWindowLength": 10
+      },
+      "id": "fdf96e42-9b02-442b-852a-6af1672eea90",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        2288,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Use this tool to search the official brochure and reference documents for the \"Al Tilal Al Sharqiya\" real estate auction (مزاد تلال الشرقية). \n\nThis tool provides verified ground-truth facts regarding:\n1. Auction event details: start/end dates, location, bidding rules, deposit requirements, and participation terms.\n2. Property and asset specs: parcel/plot numbers, property types (residential, commercial, industrial, mixed-use), plot land areas (sq meters), location highlights, and starting bid prices in SAR.\n\nQuery this tool whenever the user asks specific factual questions about available properties, auction timing, terms, or prices before generating your response.",
+        "memoryKey": {
+          "__rl": true,
+          "value": "FANA_Demo",
+          "mode": "list",
+          "cachedResultName": "FANA_Demo"
+        }
+      },
+      "id": "ff7ee92c-3226-49c2-bccc-0e777c3b4572",
+      "name": "Simple Vector Store1",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.3,
+      "position": [
+        2272,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "565d1022-d5c0-46da-880b-ceb7badbc27f",
+      "name": "Embeddings OpenAI1",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        2272,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n  \"type\": \"object\",\n  \"properties\": {\n    \"reply_message\": {\n      \"type\": \"string\",\n      \"description\": \"Polite Saudi Arabic message to send to the lead.\"\n    },\n    \"extracted_slots\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"property_type\": {\n          \"type\": [\"string\", \"null\"],\n          \"enum\": [\"Residential\", \"Commercial\", \"Industrial\", \"Mixed_Use\", null]\n        },\n        \"interested_asset\": {\n          \"type\": [\"string\", \"null\"]\n        },\n        \"budget_range\": {\n          \"type\": [\"object\", \"null\"],\n          \"properties\": {\n            \"min_sar\": { \"type\": [\"number\", \"null\"] },\n            \"max_sar\": { \"type\": [\"number\", \"null\"] },\n            \"raw_text\": { \"type\": [\"string\", \"null\"] }\n          }\n        },\n        \"cash_or_financing_readiness\": {\n          \"type\": [\"string\", \"null\"],\n          \"enum\": [\"Cash_Ready\", \"Financing_Needed\", \"Unresolved\", null]\n        },\n        \"timeline\": {\n          \"type\": [\"string\", \"null\"],\n          \"enum\": [\"Immediate_Auction\", \"1_Month\", \"3_Months\", \"Browsing\", null]\n        },\n        \"purchase_readiness\": {\n          \"type\": [\"string\", \"null\"],\n          \"enum\": [\"High\", \"Medium\", \"Low\", \"Informational\", null]\n        },\n        \"investment_purpose\": {\n          \"type\": [\"string\", \"null\"],\n          \"enum\": [\"End_User\", \"Investment\", \"Browsing_Market\", null]\n        },\n        \"escalate_to_human\": {\n          \"type\": \"boolean\"\n        },\n        \"escalation_reason\": {\n          \"type\": [\"string\", \"null\"]\n        }\n      },\n      \"required\": [\"escalate_to_human\"]\n    }\n  },\n  \"required\": [\"reply_message\", \"extracted_slots\"]\n}"
+      },
+      "id": "cda7f6f5-e2ed-4e31-b9aa-c26a719bdbd1",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2400,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Pull master payload from whichever state builder ran for this path.\n// Chat/WhatsApp path -> \"Build Master State\"; Google Sheets path -> \"Merge Fetched Data\".\nlet masterState;\ntry { masterState = $node[\"Build Master State\"].json; } catch (e) { masterState = null; }\nif (!masterState || Object.keys(masterState).length === 0) {\n  try { masterState = $node[\"Merge Fetched Data\"].json; } catch (e2) { masterState = {}; }\n}\n\n// 2. Pull output from the AI Agent node\nconst agentOutput = $input.item.json;\n\n// Extract structured fields safely\nconst structuredData = agentOutput.output || agentOutput;\nconst replyMessage = structuredData.reply_message || \"تم استلام معلوماتك، شكراً لك.\";\nconst extracted = structuredData.extracted_slots || {};\n\n// 3. Deep copy master state to maintain immutability\nconst updatedState = JSON.parse(JSON.stringify(masterState));\n\n// ============================================================================\n// 4. APPLY SLOT DELTA UPDATES (Flat Canonical Schema)\n// ============================================================================\n\nif (extracted.property_type) {\n  updatedState.property_type = extracted.property_type;\n}\nif (extracted.interested_asset) {\n  updatedState.interested_asset = extracted.interested_asset;\n}\nif (extracted.budget_range && extracted.budget_range.min_sar !== null) {\n  updatedState.budget_range = extracted.budget_range;\n}\nif (extracted.cash_or_financing_readiness) {\n  updatedState.cash_or_financing_readiness = extracted.cash_or_financing_readiness;\n}\nif (extracted.timeline) {\n  updatedState.timeline = extracted.timeline;\n}\nif (extracted.purchase_readiness) {\n  updatedState.purchase_readiness = extracted.purchase_readiness;\n}\nif (extracted.investment_purpose) {\n  updatedState.investment_purpose = extracted.investment_purpose;\n}\n\n// Update last interaction timestamp\nupdatedState.last_interaction = new Date().toISOString();\n\n// Ensure a stable key for persistence (phone-first, else existing session_key)\nupdatedState.session_key = updatedState.session_key || updatedState.mobile || null;\n\n// ============================================================================\n// 5. EVALUATE QUALIFICATION / ESCALATION STATE\n// ============================================================================\n\nif (extracted.escalate_to_human) {\n  updatedState.qualification_status = \"Escalated_To_Human\";\n  updatedState.reason = extracted.escalation_reason || \"Escalated by AI Agent\";\n} \n// Special Handling for Browsing / Informational Intent\nelse if (updatedState.timeline === \"Browsing\" || updatedState.purchase_readiness === \"Informational\") {\n  updatedState.qualification_status = \"Qualified\";\n  updatedState.reason = \"Lead identified as market browser / low urgency.\";\n} \nelse {\n  // Evaluate core active buyer slots\n  const isFullyQualified = \n    updatedState.property_type !== null &&\n    updatedState.budget_range !== null &&\n    updatedState.cash_or_financing_readiness !== null &&\n    updatedState.timeline !== null;\n\n  if (isFullyQualified) {\n    updatedState.qualification_status = \"Qualified\";\n    updatedState.reason = \"All required buying and readiness slots populated.\";\n  } else {\n    updatedState.qualification_status = \"In_Progress_AI_Agent\";\n    updatedState.reason = \"Awaiting remaining buyer slot fulfillment.\";\n  }\n}\n\n// ============================================================================\n// 6. RETURN ENRICHED PAYLOAD FOR SWITCH NODE & MESSAGING\n// ============================================================================\nreturn {\n  json: {\n    ...updatedState,\n    agent_reply_message: replyMessage\n  }\n};"
+      },
+      "id": "24ee86f1-3d77-4550-8941-b9eb62dce0f5",
+      "name": "State Sync",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2544,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YDQvbW9nrO4tZOLb",
+          "cachedResultName": "FANA Lead State"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "session_key",
+              "keyValue": "={{ $json.session_key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_key": "={{ $json.session_key }}",
+            "phone": "={{ $json.mobile }}",
+            "contact_name": "={{ $json.name }}",
+            "qualification_status": "={{ $json.qualification_status }}",
+            "last_interaction": "={{ $json.last_interaction }}",
+            "state_json": "={{ JSON.stringify($json) }}"
+          },
+          "matchingColumns": [
+            "session_key"
+          ],
+          "schema": [
+            {
+              "id": "session_key",
+              "displayName": "session_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "contact_name",
+              "displayName": "contact_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "qualification_status",
+              "displayName": "qualification_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_interaction",
+              "displayName": "last_interaction",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "state_json",
+              "displayName": "state_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "9b71214d-81a5-436e-9b70-094948e4b15a",
+      "name": "Persist Lead State",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2784,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.qualification_status }}",
+                    "rightValue": "In_Progress_AI_Agent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "b36dcc69-dd14-4f16-abf2-65618e1ee85a"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Agent in progress"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "a23f5860-0ee8-488f-99c8-e6dd410049d1",
+                    "leftValue": "={{ $json.qualification_status }}",
+                    "rightValue": "Qualified",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "data done collecting"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0255f968-bd84-42cd-abf2-b9b065f67266",
+                    "leftValue": "={{ $json.qualification_status }}",
+                    "rightValue": "Escalated_To_Human",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "human escalation"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2836c6e5-6110-49a1-b90d-9bb4da946e37",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2768,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1406820092503855",
+        "recipientPhoneNumber": "={{ $json.mobile }}",
+        "textBody": "={{ $json.agent_reply_message }}",
+        "additionalFields": {}
+      },
+      "id": "11d0d1ef-8fd5-4136-9db7-df5adda744f2",
+      "name": "Send message",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        3088,
+        -304
+      ],
+      "webhookId": "52ec3aa4-c390-463e-8cdc-e8ba0bbe6c18",
+      "alwaysOutputData": false,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "vlV8XTvboIH8zNIX",
+          "name": "WhatsApp account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// STAGE 4: PRIORITY SCORING ENGINE CODE NODE\n// ============================================================================\n// Defines priority tiers (P1, P2, P3, Disqualified) based on collected state attributes:\n// - Budget (max_sar)\n// - Financial Readiness (Cash_Ready vs Financing_Needed)\n// - Purchasing Timeline (Immediate_Auction vs 1_Month / 3_Months vs Browsing)\n// ============================================================================\n\nconst state = $input.first().json;\n\nlet score = 'P3';\nlet reason = '';\n\nconst maxBudget = state.budget_range?.max_sar || 0;\nconst isCash = state.cash_or_financing_readiness === 'Cash_Ready';\nconst isImmediate = state.timeline === 'Immediate_Auction';\nconst isFinancing = state.cash_or_financing_readiness === 'Financing_Needed';\n\n// ----------------------------------------------------------------------------\n// TIER 0: DISQUALIFIED LEAD\n// Criteria: Budget below the minimum property starting bid threshold in the auction,\n//           or explicit lack of buying intent.\n// Action:   Do not route to active sales queue; tag for automated low-priority cleanup.\n// ----------------------------------------------------------------------------\nif (maxBudget > 0 && maxBudget < 300000) {\n  score = 'Disqualified';\n  reason = `Budget of ${maxBudget.toLocaleString()} SAR is below the minimum auction parcel threshold.`;\n} \n\n// ----------------------------------------------------------------------------\n// TIER 1: P1 (HOT LEAD / HIGH PRIORITY)\n// Criteria: High budget (>= 1M SAR), liquid funds ready (Cash_Ready), and urgent \n//           intent to participate in the upcoming auction (Immediate_Auction).\n// Action:   Immediate direct phone call or high-touch sales outreach before auction day.\n// ----------------------------------------------------------------------------\nelse if (isImmediate && isCash && maxBudget >= 1500000) {\n  score = 'P1';\n  reason = `Hot buyer ready for immediate auction participation with cash budget of ${maxBudget.toLocaleString()} SAR.`;\n} \nelse if (isImmediate && (isCash || maxBudget >= 1000000)) {\n  score = 'P1';\n  reason = `High-intent buyer participating in upcoming auction with budget of ${maxBudget.toLocaleString()} SAR.`;\n}\n\n// ----------------------------------------------------------------------------\n// TIER 2: P2 (QUALIFIED / MEDIUM PRIORITY)\n// Criteria: Valid buyer who requires bank financing, or has an active purchasing \n//           horizon beyond the immediate auction (1 to 3 months).\n// Action:   Standard sales follow-up to pre-qualify financing or send secondary listings.\n// ----------------------------------------------------------------------------\nelse if (isFinancing || state.timeline === '1_Month' || state.timeline === '3_Months') {\n  score = 'P2';\n  reason = isFinancing \n    ? `Qualified buyer needing bank financing with budget of ${maxBudget.toLocaleString()} SAR.`\n    : `Qualified buyer planning to purchase within ${state.timeline ? state.timeline.replace('_', ' ') : '1-3 months'}.`;\n}\n\n// ----------------------------------------------------------------------------\n// TIER 3: P3 (NURTURE / LOW PRIORITY)\n// Criteria: Casual browsers, price researchers, or long-term market monitoring leads\n//           without immediate purchase timeline or clear budget bounds.\n// Action:   Route to marketing automated nurture campaigns / newsletter updates.\n// ----------------------------------------------------------------------------\nelse {\n  score = 'P3';\n  reason = `Market browser or long-term lead looking for general pricing information.`;\n}\n\n// ----------------------------------------------------------------------------\n// RETURN UPDATED CANONICAL MASTER STATE\n// ----------------------------------------------------------------------------\nreturn {\n  json: {\n    ...state,\n    score,\n    reason,\n    qualification_status: score === 'Disqualified' ? 'Disqualified' : 'Qualified',\n    last_interaction: new Date().toISOString()\n  }\n};"
+      },
+      "id": "ccfba6e0-f27d-40fe-b0f6-d49ea2bcf24e",
+      "name": "Lead Scoring Script",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3088,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "479d402f-53c0-49ca-a701-a100e82f5745",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        1184,
+        -352
+      ],
+      "webhookId": "9d12739a-f5d6-442d-adcc-9a3237f71c0d"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Unify Chat Trigger and WhatsApp Trigger into a common shape.\n// Chat:  { action, sessionId, chatInput }\n// WhatsApp: { messages:[{ from, text:{body} }], contacts:[{ profile:{name}, wa_id }] }\nconst j = $input.item.json;\n\nlet session_key = null;\nlet phone = null;\nlet chatInput = '';\nlet contact_name = null;\n\nif (j.chatInput !== undefined || j.sessionId !== undefined) {\n  // In-editor / public chat path\n  chatInput = j.chatInput || '';\n  session_key = j.sessionId || 'chat-session';\n} else {\n  // WhatsApp webhook path\n  const msg = (j.messages && j.messages[0]) || {};\n  const contact = (j.contacts && j.contacts[0]) || {};\n  const from = msg.from || (contact && contact.wa_id) || null;\n  phone = from ? ('+' + String(from).replace(/[^\\d]/g, '')) : null;\n  chatInput = (msg.text && msg.text.body) || j.chatInput || '';\n  contact_name = (contact.profile && contact.profile.name) || null;\n  session_key = phone || 'wa-unknown';\n}\n\n// Phone number when present, else fall back to the chat session id\nif (phone) session_key = phone;\n\nreturn { json: { session_key, phone, chatInput, contact_name } };"
+      },
+      "id": "57fdb3c1-5917-4f21-877b-825834d08a42",
+      "name": "Normalize Inbound",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YDQvbW9nrO4tZOLb",
+          "cachedResultName": "FANA Lead State"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "session_key",
+              "keyValue": "={{ $json.session_key }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "ad29f1f9-ba1e-4660-961e-7467cd780c79",
+      "name": "Load Lead State",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1744,
+        -272
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Pull directly by Node Name\nconst sessionItem = $node[\"Load Lead State\"]?.json || {};\nconst hubspotItem = $node[\"Search contacts\"]?.json || {};\nconst sessionTrigger = $node[\"When chat message received\"]?.json || {};\n\n// 2. Safely parse the nested state_json string\nlet stateData = {};\ntry {\n  stateData = typeof sessionItem.state_json === 'string' \n    ? JSON.parse(sessionItem.state_json) \n    : (sessionItem.state_json || {});\n} catch (e) {\n  stateData = {};\n}\n\n// 3. Extract HubSpot properties safely\nconst hsProps = hubspotItem.properties || {};\nconst hsContactId = hubspotItem.id || hsProps.hs_object_id || stateData.crm_lookup?.hubspot_contact_id || null;\n\n// Parse contact name\nconst firstName = hsProps.firstname || \"\";\nconst lastName = hsProps.lastname || \"\";\nconst fullName = (firstName + \" \" + lastName).trim() || stateData.name || sessionItem.contact_name || null;\n\n// 4. Construct the merged Canonical Master State Object\nconst mergedCanonicalSchema = {\n  // Identity & Meta Fields\n  is_valid_lead: stateData.is_valid_lead ?? true,\n  validation_errors: stateData.validation_errors || [],\n  lead_id: stateData.lead_id || `LEAD-${Date.now()}`,\n  session_key: sessionItem.session_key || stateData.session_key || sessionTrigger.sessionId,\n  source: stateData.source || \"WhatsApp/Chat\",\n  campaign: stateData.campaign || \"Al_Tilal_Q3_Awareness\",\n\n  // Lead Profile (Merged from HubSpot + DB State)\n  name: fullName,\n  mobile: hsProps.phone || sessionItem.phone || stateData.mobile || \"+201141524031\",\n  email: hsProps.email || stateData.email || null,\n  city: stateData.city || \"Riyadh\",\n\n  // Buying Intent & Qualification Slots\n  interested_asset: stateData.interested_asset || null,\n  property_type: stateData.property_type || null,\n  budget_range: stateData.budget_range || null,\n  investment_purpose: stateData.investment_purpose || null,\n  individual_or_company: stateData.individual_or_company || null,\n  auction_experience: stateData.auction_experience || null,\n  purchase_readiness: stateData.purchase_readiness || null,\n  cash_or_financing_readiness: stateData.cash_or_financing_readiness || null,\n  timeline: stateData.timeline || null,\n\n  // Communication & Status\n  preferred_contact_method: stateData.preferred_contact_method || \"WhatsApp\",\n  consent_or_contact_status: stateData.consent_or_contact_status || \"Pending\",\n  qualification_status: sessionItem.qualification_status || stateData.qualification_status || \"In_Progress_AI_Agent\",\n  score: stateData.score || null,\n  reason: stateData.reason || \"Awaiting remaining buyer slot fulfillment.\",\n\n  // Nested CRM Resolution Object\n  crm_lookup: {\n    is_existing_contact: Boolean(hsContactId),\n    hubspot_contact_id: hsContactId,\n    created_date: hsProps.createdate || stateData.crm_lookup?.created_date || stateData.created_date || new Date().toISOString()\n  },\n\n  // Timestamps & AI Interaction Details\n  created_date: stateData.created_date || sessionItem.createdAt || new Date().toISOString(),\n  last_interaction: sessionItem.last_interaction || stateData.last_interaction || new Date().toISOString(),\n  chatInput: sessionTrigger.chatInput || null,\n  agent_reply_message: stateData.agent_reply_message || null\n};\n\nreturn { json: mergedCanonicalSchema };\n"
+      },
+      "id": "0aafed08-5886-4b51-a34e-4c0767484258",
+      "name": "Build Master State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1952,
+        -272
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Embedding docs and Ingestion",
+        "height": 448,
+        "width": 880,
+        "color": 4
+      },
+      "id": "63f59e08-6bae-4dd7-bdbe-0e73f7e56b79",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1904,
+        -896
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1rIUntLBP1NVuOkhyiCo7HfkB3F-K_sId",
+          "mode": "list",
+          "cachedResultName": "FANA_n8n_Demo",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1rIUntLBP1NVuOkhyiCo7HfkB3F-K_sId"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "8b450269-bda1-4399-a0fb-7c2c7d0cdff6",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        -800
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "heB6dx3QH89dV6tB",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "1359cf42-d18c-4adf-9622-510590eb238f",
+      "name": "Download file",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2240,
+        -800
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "heB6dx3QH89dV6tB",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "memoryKey": {
+          "__rl": true,
+          "value": "FANA_Demo",
+          "mode": "list"
+        }
+      },
+      "id": "24afb981-c4f6-413b-8b16-4f821708cec5",
+      "name": "Simple Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.3,
+      "position": [
+        2448,
+        -800
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "81311eab-b6df-4f17-b413-09538f97f098",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        2448,
+        -608
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "dataType": "binary",
+        "options": {}
+      },
+      "id": "e6361f32-56e8-4088-82b5-1d4b7ec2316f",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        2560,
+        -608
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {
+          "messageStatusUpdates": [
+            "all",
+            "read"
+          ]
+        }
+      },
+      "id": "6a9cf67a-29e9-4fda-b5e4-f16c5cca2594",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        -144
+      ],
+      "webhookId": "bb339563-9b40-4c1c-9ac8-76703b51cf7a",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "O1sWSTICMsfEJvdn",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f72a0a6f-deba-4d00-bf21-8d3d52583427",
+              "leftValue": "={{ $json.crm_lookup.is_existing_contact }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        512,
+        -16
+      ],
+      "id": "bec49e85-110c-40ff-829c-3b4a6e3e642f",
+      "name": "contact does not exist"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "={{ $json.email }}",
+        "additionalFields": {
+          "city": "={{ $json.city }}",
+          "firstName": "={{ $json.name }}",
+          "mobilePhoneNumber": "={{ $json.mobile }}",
+          "whatsappPhoneNumber": "={{ $json.raw_payload[\"Phone number\"] }}"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        -128
+      ],
+      "id": "1efe4d37-0415-4a9c-9dcf-5f61ebf7e808",
+      "name": "Create new Contact",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "dsPstzxJMsnOXdqu",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "1406820092503855",
+        "recipientPhoneNumber": "={{ $json.mobile }}",
+        "textBody": "=أهلاً بك {{ $json.name }} في مزاد تلال الشرقية العقاري بالخبر 🏢✨  تم استلام طلبك بنجاح! أنا مساعدك الذكي من فريق المبيعات، وموجود لأساعدك في التزوّد بكل تفاصيل العقارات المتاحة، شروط المزايدة، وإتمام إجراءات تأهيلك للمزاد.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        16
+      ],
+      "id": "4ff9aa6b-c5ff-4b7a-b3b8-344dbe4bd8a9",
+      "name": "send confirmation message",
+      "webhookId": "d31e2e9c-9420-485e-b8fa-3a1e3a4c6515",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "vlV8XTvboIH8zNIX",
+          "name": "WhatsApp account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "###  Lead Ingestion & Identity Verification Workflow\nAutomatically process incoming Google Sheet registrations, enforce data sanitization, verify existing HubSpot contacts, and initiate automated buyer outreach.\n",
+        "height": 464,
+        "width": 1568,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -512,
+        -224
+      ],
+      "id": "e97f3894-3d5a-40c6-81e8-ec981c81ba95",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "search",
+        "filterGroupsUi": {
+          "filterGroupsValues": [
+            {
+              "filtersUi": {
+                "filterValues": [
+                  {
+                    "propertyName": "hs_whatsapp_phone_number|string",
+                    "value": "+201141524031"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        1712,
+        -128
+      ],
+      "id": "576b2baa-bf7a-498e-aa22-61e381437444",
+      "name": "Search contacts",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "dsPstzxJMsnOXdqu",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.score }}",
+                    "rightValue": "P1",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "9c17df52-0fc3-4873-bb89-3f3e3efc26d9"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "P1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "55379605-0fc4-4add-b68c-b2fc43b062d0",
+                    "leftValue": "={{ $json.score }}",
+                    "rightValue": "P2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "P2"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "50967007-91ab-4900-ab93-9800459c30ab",
+                    "leftValue": "={{ $json.score }}",
+                    "rightValue": "P3",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "P3"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "2c902c37-b14d-4e0d-a273-c0e86d35dce9",
+                    "leftValue": "={{ $json.score }}",
+                    "rightValue": "Disqualified",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Disqualified"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        3328,
+        -256
+      ],
+      "id": "9a55d514-84ca-4018-9724-caeacb664b79",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "={{ $json.email }}",
+        "additionalFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": []
+          },
+          "lifeCycleStage": "marketingqualifiedlead"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        3776,
+        64
+      ],
+      "id": "fb0cb0cc-b188-4ea3-816d-0ca59e766aec",
+      "name": "Create or update a contact",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "dsPstzxJMsnOXdqu",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "deal",
+        "stage": "qualifiedtobuy",
+        "additionalFields": {
+          "amount": "={{ $json.budget_range.max_sar || 0}}",
+          "description": "=HOT LEAD QUALIFIED BY AI AGENT \n• Investment Purpose: {{ $json.investment_purpose }} \n• Timeline: {{ $json.timeline }} \n• Payment Readiness: {{ $json.cash_or_financing_readiness }} \n• Auction Experience: {{ $json.auction_experience }} \n• AI Qualification Reason: {{ $json.reason }}",
+          "dealName": "=[P1 HOT]  {{ $json.name }} - {{ $json.property_type }}",
+          "dealOwner": {
+            "__rl": true,
+            "value": 99683755,
+            "mode": "list",
+            "cachedResultName": "azayed325@gmail.com"
+          },
+          "pipeline": "default"
+        }
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        3760,
+        -352
+      ],
+      "id": "99b88ce7-8d49-4675-aa11-a9e7e845c5a6",
+      "name": "create P1 deal",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "dsPstzxJMsnOXdqu",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "deal",
+        "stage": "qualifiedtobuy",
+        "additionalFields": {
+          "amount": "={{ $json.budget_range.max_sar }}",
+          "description": "=QUALIFIED BUYER - STANDARD TIMELINE \n----------------------------------- \n• Property Type: {{ $json.property_type }} \n• Investment Purpose: {{ $json.investment_purpose }} \n• Timeline: {{ $json.timeline }} \n• Payment Readiness: {{ $json.cash_or_financing_readiness }} \n• AI Qualification Reason: {{ $json.reason }}",
+          "dealName": "=[P2 STANDARD]  {{ $json.name }} - {{ $json.property_type }}",
+          "dealOwner": {
+            "__rl": true,
+            "value": 99683755,
+            "mode": "list",
+            "cachedResultName": "azayed325@gmail.com"
+          }
+        }
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        3760,
+        -96
+      ],
+      "id": "875c1147-98d5-4625-834d-f56f4168ace2",
+      "name": "Create P2 deal",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "dsPstzxJMsnOXdqu",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "={{ $json.email }}",
+        "additionalFields": {
+          "leadStatus": "OPEN_DEAL",
+          "lifeCycleStage": "opportunity"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        3760,
+        -224
+      ],
+      "id": "e0dc2136-751f-4122-b3f8-83b05574d57d",
+      "name": "P2 Update contact",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "dsPstzxJMsnOXdqu",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "={{ $json.email }}",
+        "additionalFields": {
+          "leadStatus": "UNQUALIFIED",
+          "lifeCycleStage": "other"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        3776,
+        240
+      ],
+      "id": "de5ebf3f-8a81-4e83-88df-967160203969",
+      "name": "Disqualified lead contact update",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "dsPstzxJMsnOXdqu",
+          "name": "HubSpot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "email": "azayed325@gmail.com",
+        "additionalFields": {
+          "leadStatus": "IN_PROGRESS"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2.2,
+      "position": [
+        3104,
+        16
+      ],
+      "id": "f52c6fb7-77bc-429c-9f58-89d0013f527f",
+      "name": "update contact human esclation",
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "dsPstzxJMsnOXdqu",
+          "name": "HubSpot account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Search contacts": [
+      {
+        "json": {
+          "id": "877342154966",
+          "properties": {
+            "createdate": "2026-09-27T08:22:32.264Z",
+            "email": "azayed325@gmail.com",
+            "firstname": "Ahmed Zayed",
+            "hs_object_id": "877342154966",
+            "lastmodifieddate": "2026-09-27T08:22:51.653Z",
+            "lastname": null
+          },
+          "createdAt": "2026-09-27T08:22:32.264Z",
+          "updatedAt": "2026-09-27T08:22:51.653Z",
+          "archived": false,
+          "url": "https://app-eu1.hubspot.com/contacts/149401193/record/0-1/877342154966"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "Data Validation and Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Validation and Extraction": {
+      "main": [
+        [
+          {
+            "node": "If validation errors exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If validation errors exist": {
+      "main": [
+        [
+          {
+            "node": "Stop and Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search for existing user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search for existing user": {
+      "main": [
+        [
+          {
+            "node": "Merge Fetched Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Fetched Data": {
+      "main": [
+        [
+          {
+            "node": "contact does not exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "State Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Vector Store1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Simple Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "State Sync": {
+      "main": [
+        [
+          {
+            "node": "Persist Lead State",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lead Scoring Script",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "update contact human esclation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Scoring Script": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Normalize Inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Inbound": {
+      "main": [
+        [
+          {
+            "node": "Load Lead State",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Lead State": {
+      "main": [
+        [
+          {
+            "node": "Build Master State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Master State": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Simple Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Simple Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Simple Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Trigger": {
+      "main": [
+        []
+      ]
+    },
+    "contact does not exist": {
+      "main": [
+        [
+          {
+            "node": "Create new Contact",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "send confirmation message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "send confirmation message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search contacts": {
+      "main": [
+        []
+      ]
+    },
+    "Send message": {
+      "main": [
+        []
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "create P1 deal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create P2 deal",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "P2 Update contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create or update a contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Disqualified lead contact update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or update a contact": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "7c9792fb-3bc7-4364-82d2-3b99486cf110",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0a5c1a8469b9f3db4d1aa74b8399f7b8e0d32724bdf8ec2f1bd2a7266713c457"
+  },
+  "nodeGroups": [],
+  "id": "FlPl2gSE0VCgXleg",
+  "tags": []
+}
